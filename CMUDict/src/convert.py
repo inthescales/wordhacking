@@ -4,7 +4,8 @@ import sys
 
 from enum import IntEnum
 
-import gen_am as gen_am
+import ipa
+
 from overrides import override_for
 
 # Output types ----------------------------------------------------------------
@@ -97,7 +98,7 @@ with open(cmudict_path, mode='r', encoding='latin-1') as in_file:
 
         # Convert phoneme format
         if phoneme_format == PhonemeFormat.IPA:
-            phonemes = [ipa for code in arpabet_codes for ipa in gen_am.from_arpa(code, True)]
+            phonemes = [ipa_code for code in arpabet_codes for ipa_code in ipa.from_arpa(code, rhotic_vowels=True)]
         else:
             phonemes = arpabet_codes
 
