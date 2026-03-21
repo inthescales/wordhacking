@@ -1,4 +1,4 @@
-from src.overrides import override_for
+from CMUDict.src.overrides import override_for
 
 def first(pronounce_dict, use_overrides=True):
     """
