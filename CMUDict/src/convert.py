@@ -1,112 +1,131 @@
-import getopt
-import re
-import sys
-
-from enum import IntEnum
-
-import ipa
-
-from overrides import override_for
-
-# Output types ----------------------------------------------------------------
-
-class OutputFormat:
-    """
-    Data structure containing strings and string builders for outputting data
-    in a specified format.
-    """
-    def __init__(self, head, line, separator, tail):
-        self.head = head
-        self.line = line
-        self.separator = separator
-        self.tail = tail
-
-# JSON output format
-output_json = OutputFormat(
-    head="{",
-    line=lambda term, phonemes: f'\t"{term}": ["{'", "'.join(phonemes)}"]',
-    separator=",",
-    tail="}"
-)
-
-# Phoneme formats -------------------------------------------------------------
-
-class PhonemeFormat(IntEnum):
-    """Enum representing the desired phoneme format."""
-    ARPABET = 0,
-    IPA = 1
-
-# Read arguments --------------------------------------------------------------
-
-opts, params = getopt.getopt(sys.argv[1:], "", [])
-
-# Path of the CMUDict data file
-cmudict_path = params[0]
-
-# Output format
-output_format = output_json
-
-# Phoneme format
-phoneme_format = PhonemeFormat.IPA
-
 # Helpers ---------------------------------------------------------------------
 
-class Entry():
-    """Data structure representing an entry in the CMUDict data."""
-    def __init__(self, term, number, codes):
-        self.term = term
-        self.number = number
-        self.codes = codes
+def parse_code(code):
+	"""Parse the sound code and any stress indicator from an ARPABET code."""
+	if code[-1].isdigit():
+		return (code[:-1], int(code[-1]))
+	else:
+		return (code, None)
 
-def parse_line(line):
-    if line.startswith(";;;"):
-        return None
+def reduce_unstressed(phoneme, stress):
+	"""
+	CMUDict's use of ARPABET doesn't distinguish between /ʌ/ and /ə/, or
+	between /ɝ/ and /ɚ/.
 
-    """Parse a single line of CMUDict and return it as an Entry model"""
-    result = re.search("(.+?)(\\((\\d+)\\))? +(.*)", line)
+	Convert these two reduced schwa forms if the accompanying stress value is
+	0 (unstressed), or return the original phoneme unchanged if this does
+	not apply.
 
-    term = str(result.group(1)).replace("\"", "\\\"")
-    number = result.group(3)
-    codes = result.group(4).split(" ")
+	Assumes unstressed vowel merger (/ɨ/ not distinct from /ə/).
+	"""
+	if stress != 0:
+		return phoneme
 
-    return Entry(term, number, codes)
+	match phoneme:
+		case "AH":
+			return "ə"
+		case "ER":
+			return "ɚ"
 
-# Process file ----------------------------------------------------------------
+	return phoneme
 
-with open(cmudict_path, mode='r', encoding='latin-1') as in_file:
+def expand_rhotic(phoneme):
+	"""
+	Expands a rhotic vowel phoneme into a vowel followed by 'ɹ'.
+	Returns non-rhotic-vowel phonemes unchanged.
+	"""
 
-    print(output_format.head)
+	match phoneme:
+		case "ɚ":
+			return ["ə", "ɹ"]
+		case "ɝ":
+			return ["ɛ", "ɹ"]
 
-    firstline = True
-    for line in in_file:
-        entry = parse_line(line)
+	return phoneme
 
-        # Ignore lines that don't contain a term
-        if entry == None:
-            continue
+# Convert ARPABET -> IPA ------------------------------------------------------
 
-        # Skip alternate pronunciations
-        if entry.number != None:
-            continue
+def arpabet_to_ipa(code, reduced_schwas=True, rhotic_vowels=True):
+	"""
+	Convert a two-letter ARPABet code to IPA.
+	Returns a list of IPA strings, with diphthongs included together in a
+	single string.
+	"""
+	phonemes = {
+		"AA": "ɑ",
+		"AE": "æ",
+		"AH": "ʌ",
+		"AO": "ɔ",
+		"AW": "aʊ",
+		"AX": "ə",
+		"AXR": "ɚ",
+		"AY": "aɪ",
+		"EH": "ɛ",
+		"ER": "ɝ",
+		"EY": "eɪ",
+		"IH": "ɪ",
+		"IX": "ɨ",
+		"IY": "i",
+		"OW": "oʊ",
+		"OY": "ɔɪ",
+		"UH": "ʊ",
+		"UW": "u",
+		"UX": "ʉ",
+		"B": "b",
+		"CH": "tʃ",
+		"D": "d",
+		"DH": "ð",
+		"DX": "ɾ",
+		"EL": "l̩",
+		"EM": "m̩",
+		"EN": "n̩",
+		"F": "f",
+		"G": "g",
+		"HH": "h",
+		"JH": "dʒ",
+		"K": "k",
+		"L": "l",
+		"M": "m",
+		"N": "n",
+		"NG": "ŋ",
+		"NX": "ɾ̃",
+		"P": "p",
+		"Q": "ʔ",
+		"R": "ɹ",
+		"S": "s",
+		"SH": "ʃ",
+		"T": "t",
+		"TH": "θ",
+		"V": "v",
+		"W": "w",
+		"WH": "ʍ",
+		"Y": "j",
+		"Z": "z",
+		"ZH": "ʒ"
+	}
 
-        # Override certain pronunciations
-        override_codes = override_for(entry.term.lower())
-        if override_codes != None:
-            arpabet_codes = override_codes
-        else:
-            arpabet_codes = entry.codes
+	(sound, stress) = parse_code(code)
+	
+	if not sound in phonemes:
+		raise Exception(f"Invalid ARPABET code '{sound}'")
 
-        # Convert phoneme format
-        if phoneme_format == PhonemeFormat.IPA:
-            phonemes = [ipa_code for code in arpabet_codes for ipa_code in ipa.from_arpa(code, rhotic_vowels=True)]
-        else:
-            phonemes = arpabet_codes
+	ipa = phonemes[sound]
 
-        if firstline:
-            firstline = False
-        else:
-            print(output_format.separator)
+	if reduced_schwas:
+		ipa = reduce_unstressed(ipa, stress)
 
-        print(output_format.line(entry.term, phonemes), end="")
-    
-    print("\n" + output_format.tail)
+	if not rhotic_vowels:
+		ipa = expand_rhotic(ipa)
+
+	return [ipa] if type(ipa) is not list else ipa
+
+def to_ipa(pronounce_dict, rhotic_vowels=True):
+	result_dict = {}
+
+	for (term, items) in pronounce_dict.items():
+		if type(items[0]) is list:
+			result_dict[term] = [[ipa_code for code in variant for ipa_code in arpabet_to_ipa(code, rhotic_vowels=rhotic_vowels)] for variant in items]
+		else:
+		    result_dict[term] = [ipa_code for code in items for ipa_code in arpabet_to_ipa(code, rhotic_vowels=rhotic_vowels)]
+
+	return result_dict
