@@ -37,19 +37,23 @@ def _read_words():
 	path = _find_file()
 
 	if path is None:
-		raise Exceptin("Unable to find Unix words file.")
+		raise Exception("Unable to find Unix words file.")
 
 	with open(path, "r") as words_file:
 		for line in words_file:
 			word = line.strip()
+			
 			word_set.add(word)
 
 # Access ----------------------------------------------------------------------
 
-def contains(word):
+def contains(word, case_sensitive=True):
 	"""Returns True if the Unix words file contains the given word."""
 	global word_set
 
 	_read_words()
 
-	return word in word_set
+	if case_sensitive:
+		return word in word_set
+	else:
+		return (word.lower() in word_set) or (word.title() in word_set)
