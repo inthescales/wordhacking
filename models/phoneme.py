@@ -40,6 +40,11 @@ class Backness(IntEnum):
 	central = 1
 	front = 2
 
+class Stress(IntEnum):
+	unstressed = 0
+	primary = 1
+	secondary = 2
+
 PoA = PlaceOfArticulation
 MoA = MannerOfArticulation
 
@@ -75,11 +80,20 @@ class Phoneme(ABC):
 			is_long = True
 			symbol = symbol.replace("ː", "")
 
+		stress = None
+		if "ˈ" in symbol:
+			stress = Stress.primary
+			symbol = symbol.replace("ˈ", "")
+
+		if "ˌ" in symbol:
+			stress = Stress.secondary
+			symbol = symbol.replace("ˈ", "ˌ")
+
 		for (height, row) in vowel_chart.items():
 			for (backness, pair) in row.items():
 				for rounded in [0, 1]:
 					if pair[rounded] == symbol:
-						return VowelPhoneme(height, backness, bool(rounded))
+						return VowelPhoneme(height, backness, bool(rounded), is_long, stress)
 
 		for (manner, row) in consonant_chart.items():
 			for (place, pair) in row.items():
@@ -230,23 +244,34 @@ class Phoneme(ABC):
 		return self.is_consonant and self.voiced
 
 class VowelPhoneme(Phoneme):
-	def __init__(self, height: Height, backness: Backness, rounded: bool, long: bool = False):
+	def __init__(self, height: Height, backness: Backness, rounded: bool, long: bool = False, stress = None):
 		self.height = height
 		self.backness = backness
 		self.rounded = rounded
 		self.long = long
+		self.stress = stress
 
 		if self.ipa == None:
 			raise Exception(f"Unrecognized vowel phoneme: {height}, {backness}, {rounded}")
 
-	@property
 	def ipa(self, suprasegmentals=False):
 		global vowel_chart
 
 		symbol = vowel_chart[self.height][self.backness][0 if not self.rounded else 1]
 
-		if self.long and suprasegmentals:
-			symbol += "ː"
+		if suprasegmentals:
+			match self.stress:
+				case Stress.primary:
+					stress_marker = "ˈ"
+				case Stress.secondary:
+					stress_marker = "ˌ"
+				case _:
+					stress_marker = ""
+
+			symbol = stress_marker + symbol
+
+			if self.long:
+				symbol += "ː"
 
 		return symbol
 
@@ -259,7 +284,6 @@ class ConsonantPhoneme(Phoneme):
 		if self.ipa == None:
 			raise Exception(f"Unrecognized consonant phoneme: {place}, {manner}, {voiced}")
 
-	@property
 	def ipa(self, suprasegmentals=False):
 		global consonant_chart
 
